@@ -2,7 +2,7 @@ import os
 import torch
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from web_safety.agent.prompt import SYSTEM_PROMPT
+from webdojo.agent.prompt import SYSTEM_PROMPT
 
 
 class WebDojo_Agent_Chat:
@@ -70,7 +70,8 @@ class WebDojo_Agent_Chat:
   
 		return {
 			"model_output": model_output,
-			"user_prompt": prompt,
+			"conversations": conversations,
+			"user_prompt": self.get_webrl_prompt(html),
 		}
 
 
@@ -87,9 +88,35 @@ class WebDojo_Agent_Chat:
 				content_assistant = f"{self.action_history[i]}"
 			conversation = [{'role': 'user', 'content': content_user}, {'role': 'assistant', 'content': content_assistant}]
 			conversations = conversation + conversations
+   
+		if index == 0:
+			conversations = [
+				{'role': 'system', 'content': SYSTEM_PROMPT},
+				{'role': 'user', 'content': f"Task Instruction: {self.goal}\n\nRound {index}\n{html}"}
+			]
+			return conversations
         
 		system_turn = [{'role': 'system', 'content': SYSTEM_PROMPT}]
 		current_turn = [{'role': 'user', 'content': f'Round {index}\n\n{html}'}]
 		conversations = system_turn + conversations + current_turn
   
 		return conversations
+
+
+	def get_webrl_prompt(self, html: str):
+		# set system prompt
+		prompt = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\n{SYSTEM_PROMPT}<|eot_id|><|start_header_id|>user<|end_header_id|>{USER_PROMPT}\n\n"
+  
+		index = len(self.action_history)
+		history = ""
+		for i in range(index - 1, -1, -1):
+			if i == 0:
+				history = f"Round {i}\n\n<|eot_id|><|start_header_id|>user<|end_header_id|>\n{self.goal}\n\n<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n{self.action_history[i]}\n\n" + history
+			else:
+				history = f"Round {i}\n\n<|eot_id|><|start_header_id|>user<|end_header_id|>\n** Simplified html **\n\n<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n{self.action_history[i]}\n\n" + history
+		if len(history) + len(html) > (16384 - 512):
+			html = html[:(16384 - 512)-len(history)]
+		current_turn = f"Round {index}\n\n<|eot_id|><|start_header_id|>user<|end_header_id|>\n{html}\n\n<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n"
+		user_prompt = f"Task Instruction: {self.goal}\n\n{history}{current_turn}"
+  
+		return user_prompt
